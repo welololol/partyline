@@ -635,18 +635,22 @@ class Server:
             wait = self.password_wait(room.id, member)
             if wait:
                 return f"too many wrong passwords, try again in {wait} s"
-        reason = self.enter(member, room, password)
+        reason = self.enter_with_check(member, room, password)
         if reason == WRONG_PASSWORD and isinstance(password, str):
             self.password_failed(room.id, member)
         elif reason is None and room.password:
             self.password_passed(room.id, member)
         return reason
 
-    def enter(self, member, room, password):
+    def enter_with_check(self, member, room, password):
         # Move a member into the room when allowed
         reason = room.check(member, password)
         if reason is not None:
             return reason
+        else:
+            self.enter(member, room)
+
+    def enter(self, member, room):
         member.set_room(room)
         member.speaker = room.can_speak(member)
         self.send(member.link, {FIELD_ROOM: [room.id, room.profile, room.frame_ms, member.speaker]})
@@ -713,7 +717,7 @@ class Server:
             member.name = self.unique_name(name, member)
             member.rtt = rtt
             member.admitted = True
-            reason = self.enter(member, room, room.password)
+            reason = self.enter_with_check(member, room, room.password)
             if reason is not None:
                 return None, reason
             self.members[bridge] = member
@@ -1019,7 +1023,7 @@ class Server:
                     return
                 if room is target.room:
                     return
-                reason = self.enter(target, room, room.password)  # operators bypass the password, not the allow list
+                reason = self.enter(target, room)  # operators get bypass all rooms requirements
                 if reason is not None:
                     self.send(operator.link, {FIELD_DENIED: [room.id, reason]})
                     return
@@ -1208,7 +1212,7 @@ class Server:
             if member.link is None:
                 member.bridge.hangup()
                 continue
-            if self.enter(member, self.default_room, self.default_room.password) is not None:
+            if self.enter_with_check(member, self.default_room, self.default_room.password) is not None:
                 member.set_room(None)
                 self.send(member.link, {FIELD_ROOM: [None, None, None, True]})
             self.notice(member, f"{room.name} was removed by an operator.")
